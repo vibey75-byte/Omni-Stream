@@ -4,7 +4,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY . .
 RUN npm run build
@@ -14,30 +14,13 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-ARG VERSION
-ARG REVISION
-ARG CREATED
-ARG DESCRIPTION
-ARG SOURCE
-
-LABEL org.opencontainers.image.title="CinePro Core" \
-      org.opencontainers.image.description="${DESCRIPTION}" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.created="${CREATED}" \
-      org.opencontainers.image.source="${SOURCE}"
-
-ARG NODE_ENV=production
-ARG PORT=3000
-ARG CACHE_TYPE=memory
-
-ENV NODE_ENV=${NODE_ENV}
+ENV NODE_ENV=production
 ENV HOST=0.0.0.0
-ENV PORT=${PORT}
-ENV CACHE_TYPE=${CACHE_TYPE}
+ENV PORT=3000
+ENV CACHE_TYPE=memory
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
@@ -46,6 +29,6 @@ RUN addgroup -g 1001 -S nodejs && \
 
 USER nodejs
 
-EXPOSE ${PORT}
+EXPOSE 3000
 
 CMD ["node", "dist/server.js"]
