@@ -5,8 +5,8 @@ import type {
     ProviderResult,
     Source
 } from '@omss/framework';
-import type { StreamResponse } from './vidzee.types';
-import { decrypt, deriveKey } from './decrypt';
+import type { StreamResponse } from './vidzee.types.js';
+import { decrypt, deriveKey } from './decrypt.js';
 
 export class VidZeeProvider extends BaseProvider {
     readonly id = 'vidzee';
@@ -27,10 +27,16 @@ export class VidZeeProvider extends BaseProvider {
         supportedContentTypes: ['movies', 'tv']
     };
 
+    /**
+     * Fetch movie sources
+     */
     async getMovieSources(media: ProviderMediaObject): Promise<ProviderResult> {
         return this.getSources(media, { type: 'movie' });
     }
 
+    /**
+     * Fetch TV episode sources
+     */
     async getTVSources(media: ProviderMediaObject): Promise<ProviderResult> {
         return this.getSources(media, {
             type: 'tv',
@@ -39,6 +45,9 @@ export class VidZeeProvider extends BaseProvider {
         });
     }
 
+    /**
+     * Main scraping logic - Parallel servers + FULL parallel decryption
+     */
     private async getSources(
         media: ProviderMediaObject,
         params: { type: 'movie' | 'tv'; season?: string; episode?: string }
@@ -48,7 +57,10 @@ export class VidZeeProvider extends BaseProvider {
 
             const decKey = await this.fetchDecryptionKey();
             if (!decKey) {
-                return this.emptyResult('Failed to fetch decryption key', media);
+                return this.emptyResult(
+                    'Failed to fetch decryption key',
+                    media
+                );
             }
 
             const serverPromises = Array.from({ length: 14 }, (_, serverId) =>
@@ -71,7 +83,10 @@ export class VidZeeProvider extends BaseProvider {
             const decryptPromises = successfulResponses.map((response) =>
                 Promise.all(
                     response.url.map((u) => decrypt(u.link, decKey))
-                ).then((decryptedLinks) => ({ response, decryptedLinks }))
+                ).then((decryptedLinks) => ({
+                    response,
+                    decryptedLinks
+                }))
             );
             const decryptionResults = await Promise.all(decryptPromises);
 
@@ -83,7 +98,10 @@ export class VidZeeProvider extends BaseProvider {
 
                 for (const track of response.tracks) {
                     if (track.url && track.lang) {
-                        const proxySubUrl = this.createProxyUrl(track.url, this.HEADERS);
+                        const proxySubUrl = this.createProxyUrl(
+                            track.url,
+                            this.HEADERS
+                        );
                         const subKey = `${track.lang}_${response.serverInfo.number}`;
 
                         if (!allSubtitles.has(subKey)) {
@@ -111,16 +129,28 @@ export class VidZeeProvider extends BaseProvider {
                           }
                         : link.includes('serversicuro.cc')
                           ? {}
-                          : { ...this.HEADERS, Referer: `${this.BASE_URL}/` }
+                          : {
+                                ...this.HEADERS,
+                                Referer: `${this.BASE_URL}/`
+                            }
                 ),
                 type: 'hls' as SourceType,
                 quality: this.inferQuality(link),
                 audioTracks: [
                     link.includes('phim1280.tv')
-                        ? { language: 'vie', label: 'Vietnamese' }
-                        : { language: 'eng', label: 'English' }
+                        ? {
+                              language: 'vie',
+                              label: 'Vietnamese'
+                          }
+                        : {
+                              language: 'eng',
+                              label: 'English'
+                          }
                 ],
-                provider: { id: this.id, name: this.name }
+                provider: {
+                    id: this.id,
+                    name: this.name
+                }
             }));
 
             return {
@@ -136,6 +166,9 @@ export class VidZeeProvider extends BaseProvider {
         }
     }
 
+    /**
+     * Fetch single server response
+     */
     private async fetchServer(
         tmdbId: string,
         serverId: number,
@@ -149,8 +182,14 @@ export class VidZeeProvider extends BaseProvider {
                 url += `&ss=${params.season}&ep=${params.episode}`;
             }
 
-            const response = await fetch(url, { headers: this.HEADERS });
-            if (!response.ok) return null;
+            const response = await fetch(url, {
+                headers: this.HEADERS
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
             return (await response.json()) as StreamResponse;
         } catch {
             return null;
@@ -165,14 +204,20 @@ export class VidZeeProvider extends BaseProvider {
 
             if (response.status === 200) {
                 const data = await response.text();
-                if (data) return await deriveKey(data);
+                if (data) {
+                    return await deriveKey(data);
+                }
             }
+
             return null;
         } catch {
             return null;
         }
     }
 
+    /**
+     * Return empty result with diagnostic
+     */
     private emptyResult(
         message: string,
         media: ProviderMediaObject
@@ -191,6 +236,9 @@ export class VidZeeProvider extends BaseProvider {
         };
     }
 
+    /**
+     * Health check
+     */
     async healthCheck(): Promise<boolean> {
         try {
             const response = await fetch(this.BASE_URL, {
