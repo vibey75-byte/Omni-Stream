@@ -1,27 +1,19 @@
-import {
-    BaseProvider,
-    type Subtitle,
-    type SourceType
-} from '@omss/framework';
-
+import { BaseProvider, type Subtitle, type SourceType } from '@omss/framework';
 import type {
     ProviderCapabilities,
     ProviderMediaObject,
     ProviderResult,
     Source
 } from '@omss/framework';
-
-import type { StreamResponse } from './vidzee.types';
-import { decrypt, deriveKey } from './decrypt';
+import type { StreamResponse } from './vidzee.types';  // تم الإصلاح: إزالة .js
+import { decrypt, deriveKey } from './decrypt';  // تم الإصلاح: إزالة .js
 
 export class VidZeeProvider extends BaseProvider {
     readonly id = 'vidzee';
     readonly name = 'VidZee';
     readonly enabled = true;
-
     readonly BASE_URL = 'https://core.vidzee.wtf';
     readonly PLAYER_URL = 'https://player.vidzee.wtf';
-
     readonly HEADERS = {
         'User-Agent':
             'Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.7051.98 Safari/537.36',
@@ -56,75 +48,84 @@ export class VidZeeProvider extends BaseProvider {
 
             const decKey = await this.fetchDecryptionKey();
             if (!decKey) {
-                return this.emptyResult('Failed to fetch key', media);
+                return this.emptyResult('Failed to fetch decryption key', media);
             }
 
-            const serverPromises = Array.from({ length: 14 }, (_, i) =>
-                this.fetchServer(tmdbId, i, params)
+            const serverPromises = Array.from({ length: 14 }, (_, serverId) =>
+                this.fetchServer(tmdbId, serverId, params)
             );
 
             const results = await Promise.allSettled(serverPromises);
+            const successfulResponses: StreamResponse[] = [];
 
-            const successful: StreamResponse[] = [];
-
-            for (const r of results) {
-                if (r.status === 'fulfilled' && r.value) {
-                    successful.push(r.value);
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value) {
+                    successfulResponses.push(result.value);
                 }
             }
 
-            if (!successful.length) {
-                return this.emptyResult('No servers found', media);
+            if (successfulResponses.length === 0) {
+                return this.emptyResult('No working servers', media);
             }
 
-            const decryptResults = await Promise.all(
-                successful.map(async (res) => {
-                    const links = await Promise.all(
-                        res.url.map((u: { link: string }) =>
-                            decrypt(u.link, decKey)
-                        )
-                    );
-                    return { res, links };
-                })
+            const decryptPromises = successfulResponses.map((response) =>
+                Promise.all(
+                    response.url.map((u) => decrypt(u.link, decKey))
+                ).then((decryptedLinks) => ({ response, decryptedLinks }))
             );
+            const decryptionResults = await Promise.all(decryptPromises);
 
-            const allLinks: string[] = [];
-            const subtitles = new Map<string, Subtitle>();
+            const allDecryptedLinks: string[] = [];
+            const allSubtitles = new Map<string, Subtitle>();
 
-            for (const { res, links } of decryptResults) {
-                allLinks.push(...links);
+            for (const { response, decryptedLinks } of decryptionResults) {
+                allDecryptedLinks.push(...decryptedLinks);
 
-                for (const track of res.tracks) {
-                    const key = `${track.lang}_${res.serverInfo.number}`;
+                for (const track of response.tracks) {
+                    if (track.url && track.lang) {
+                        const proxySubUrl = this.createProxyUrl(track.url, this.HEADERS);
+                        const subKey = `${track.lang}_${response.serverInfo.number}`;
 
-                    if (!subtitles.has(key)) {
-                        subtitles.set(key, {
-                            url: this.createProxyUrl(track.url, this.HEADERS),
-                            label: track.lang.replace(/\d+/g, '').trim(),
-                            format: 'vtt'
-                        });
+                        if (!allSubtitles.has(subKey)) {
+                            allSubtitles.set(subKey, {
+                                url: proxySubUrl,
+                                label: track.lang.replace(/\d+/g, '').trim(),
+                                format: 'vtt'
+                            });
+                        }
                     }
                 }
             }
 
-            const uniqueLinks = [...new Set(allLinks)].filter(
-                (link): link is string => typeof link === 'string' && link.startsWith('http')
+            const uniqueLinks = [...new Set(allDecryptedLinks)].filter(
+                (link) => link && link.startsWith('http')
             );
 
             const sources: Source[] = uniqueLinks.map((link) => ({
-                url: this.createProxyUrl(link, this.HEADERS),
+                url: this.createProxyUrl(
+                    link,
+                    link.includes('fast33lane')
+                        ? {
+                              referer: 'https://rapidairmax.site/',
+                              origin: 'https://rapidairmax.site'
+                          }
+                        : link.includes('serversicuro.cc')
+                          ? {}
+                          : { ...this.HEADERS, Referer: `${this.BASE_URL}/` }
+                ),
                 type: 'hls' as SourceType,
                 quality: this.inferQuality(link),
-                audioTracks: [],
-                provider: {
-                    id: this.id,
-                    name: this.name
-                }
+                audioTracks: [
+                    link.includes('phim1280.tv')
+                        ? { language: 'vie', label: 'Vietnamese' }
+                        : { language: 'eng', label: 'English' }
+                ],
+                provider: { id: this.id, name: this.name }
             }));
 
             return {
                 sources,
-                subtitles: Array.from(subtitles.values()),
+                subtitles: Array.from(allSubtitles.values()),
                 diagnostics: []
             };
         } catch (error) {
@@ -141,16 +142,15 @@ export class VidZeeProvider extends BaseProvider {
         params: { type: 'movie' | 'tv'; season?: string; episode?: string }
     ): Promise<StreamResponse | null> {
         try {
-            let url = `${this.PLAYER_URL}/api/server?id=${tmdbId}&sr=${serverId}`;
+            let url =
+                this.PLAYER_URL + `/api/server?id=${tmdbId}&sr=${serverId}`;
 
             if (params.type === 'tv' && params.season && params.episode) {
                 url += `&ss=${params.season}&ep=${params.episode}`;
             }
 
             const response = await fetch(url, { headers: this.HEADERS });
-
             if (!response.ok) return null;
-
             return (await response.json()) as StreamResponse;
         } catch {
             return null;
@@ -163,12 +163,11 @@ export class VidZeeProvider extends BaseProvider {
                 headers: this.HEADERS
             });
 
-            if (!response.ok) return null;
-
-            const data = await response.text();
-            if (!data) return null;
-
-            return await deriveKey(data);
+            if (response.status === 200) {
+                const data = await response.text();
+                if (data) return await deriveKey(data);
+            }
+            return null;
         } catch {
             return null;
         }
@@ -198,7 +197,6 @@ export class VidZeeProvider extends BaseProvider {
                 method: 'HEAD',
                 headers: this.HEADERS
             });
-
             return response.status === 200;
         } catch {
             return false;
