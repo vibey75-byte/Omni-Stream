@@ -11,6 +11,10 @@ export type StreamResponse = {
 
 export type Headers = {
     'User-Agent': string;
+    Referer?: string;
+    Origin?: string;
+    Accept?: string;
+    'Accept-Language'?: string;
 };
 
 export type Server = unknown;
