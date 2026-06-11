@@ -11,8 +11,8 @@ import type {
     Source
 } from '@omss/framework';
 
-import type { StreamResponse } from './vidzee.types.js';
-import { decrypt, deriveKey } from './decrypt.js';
+import type { StreamResponse } from './vidzee.types';
+import { decrypt, deriveKey } from './decrypt';
 
 export class VidZeeProvider extends BaseProvider {
     readonly id = 'vidzee';
@@ -77,18 +77,21 @@ export class VidZeeProvider extends BaseProvider {
                 return this.emptyResult('No servers found', media);
             }
 
-            const decryptPromises = successful.map((res) =>
-                Promise.all(
-                    res.url.map((u: { link: string }) => decrypt(u.link, decKey))
-                ).then((links) => ({ res, links }))
+            const decryptResults = await Promise.all(
+                successful.map(async (res) => {
+                    const links = await Promise.all(
+                        res.url.map((u: { link: string }) =>
+                            decrypt(u.link, decKey)
+                        )
+                    );
+                    return { res, links };
+                })
             );
-
-            const decryptedResults = await Promise.all(decryptPromises);
 
             const allLinks: string[] = [];
             const subtitles = new Map<string, Subtitle>();
 
-            for (const { res, links } of decryptedResults) {
+            for (const { res, links } of decryptResults) {
                 allLinks.push(...links);
 
                 for (const track of res.tracks) {
@@ -105,7 +108,7 @@ export class VidZeeProvider extends BaseProvider {
             }
 
             const uniqueLinks = [...new Set(allLinks)].filter(
-                (link) => typeof link === 'string' && link.startsWith('http')
+                (link): link is string => typeof link === 'string' && link.startsWith('http')
             );
 
             const sources: Source[] = uniqueLinks.map((link) => ({
