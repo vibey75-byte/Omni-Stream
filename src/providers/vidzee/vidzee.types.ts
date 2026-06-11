@@ -1,41 +1,21 @@
-export type StreamResponse = {
-    headers: Headers;
-    provider: string;
-    servers: Server[];
-    url: StreamUrl[];
-    tracks: Track[];
-    proxy: boolean;
-    thumbnail: string;
-    serverInfo: ServerInfo;
-};
+// src/providers/vidzee/vidzee.types.ts
 
-export type Headers = {
-    'User-Agent': string;
-    Referer?: string;
-    Origin?: string;
-    Accept?: string;
-    'Accept-Language'?: string;
-};
+export interface VidzeeOptions {
+    apiKey?: string;
+    timeout?: number;
+    retries?: number;
+}
 
-export type Server = unknown;
+export interface VidzeeResponse {
+    success: boolean;
+    data?: string;
+    url?: string;
+    error?: string;
+}
 
-export type StreamUrl = {
-    lang: string;
-    link: string;
-    type: 'hls' | string;
-    message: string;
-    name: string;
-    flag: string;
-};
-
-export type Track = {
-    lang: string;
-    url: string;
-};
-
-export type ServerInfo = {
-    number: number;
-    name: string;
-    flag: string;
-    language: string;
-};
+export interface VidzeeVideoInfo {
+    id: string;
+    title: string;
+    sources: string[];
+    subtitles?: string[];
+}
