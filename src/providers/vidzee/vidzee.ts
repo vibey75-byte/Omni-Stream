@@ -11,8 +11,8 @@ import type {
     Source
 } from '@omss/framework';
 
-import type { StreamResponse } from './vidzee.types';
-import { decrypt, deriveKey } from './decrypt';
+import type { StreamResponse } from './vidzee.types.js';
+import { decrypt, deriveKey } from './decrypt.js';
 
 export class VidZeeProvider extends BaseProvider {
     readonly id = 'vidzee';
@@ -73,13 +73,14 @@ export class VidZeeProvider extends BaseProvider {
                 }
             }
 
-            if (successful.length === 0) {
+            if (!successful.length) {
                 return this.emptyResult('No servers found', media);
             }
 
             const decryptPromises = successful.map((res) =>
-                Promise.all(res.url.map((u) => decrypt(u.link, decKey)))
-                    .then((links) => ({ res, links }))
+                Promise.all(
+                    res.url.map((u: { link: string }) => decrypt(u.link, decKey))
+                ).then((links) => ({ res, links }))
             );
 
             const decryptedResults = await Promise.all(decryptPromises);
